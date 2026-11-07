@@ -27,17 +27,17 @@ public final class Planner {
             new Target("Drewno", true, 8, n -> List.of(wood(n))),
             new Target("Kamień (cobblestone)", true, 16, n -> List.of(pick(1), stone(n))),
             new Target("Węgiel", true, 8, n -> List.of(pick(1),
-                    ore("węgiel", BlockTags.COAL_ORES, Items.COAL, n, 50))),
+                    ore("węgiel", BlockTags.COAL_ORES, Items.COAL, n, 50, 1))),
             new Target("Ruda żelaza (surowe żelazo)", true, 6, n -> List.of(pick(2),
-                    ore("żelazo", BlockTags.IRON_ORES, Items.RAW_IRON, n, 16))),
+                    ore("żelazo", BlockTags.IRON_ORES, Items.RAW_IRON, n, 16, 2))),
             new Target("Ruda złota (surowe złoto)", true, 4, n -> List.of(pick(3),
-                    ore("złoto", BlockTags.GOLD_ORES, Items.RAW_GOLD, n, -16))),
+                    ore("złoto", BlockTags.GOLD_ORES, Items.RAW_GOLD, n, -16, 3))),
             new Target("Diament", true, 3, n -> List.of(pick(3),
-                    ore("diament", BlockTags.DIAMOND_ORES, Items.DIAMOND, n, -58))),
+                    ore("diament", BlockTags.DIAMOND_ORES, Items.DIAMOND, n, -58, 3))),
             new Target("Czerwony kamień", true, 8, n -> List.of(pick(3),
-                    ore("redstone", BlockTags.REDSTONE_ORES, Items.REDSTONE, n, -58))),
+                    ore("redstone", BlockTags.REDSTONE_ORES, Items.REDSTONE, n, -58, 3))),
             new Target("Lapis lazuli", true, 8, n -> List.of(pick(2),
-                    ore("lapis", BlockTags.LAPIS_ORES, Items.LAPIS_LAZULI, n, 0))),
+                    ore("lapis", BlockTags.LAPIS_ORES, Items.LAPIS_LAZULI, n, 0, 2))),
             // ----- przedmioty -----
             new Target("Stół warsztatu", false, 0, n -> List.of(planks(4), CraftTask.craftingTable())),
             new Target("Kilof drewniany", false, 0, n -> List.of(pick(1))),
@@ -74,18 +74,18 @@ public final class Planner {
     }
 
     static Task wood(int n) {
-        return new CollectTask("drewno", st -> st.is(BlockTags.LOGS_THAT_BURN), CraftTask.LOG, n, Bot.NO_DEPTH);
+        return new CollectTask("drewno", st -> st.is(BlockTags.LOGS_THAT_BURN), CraftTask.LOG, n, Bot.NO_DEPTH, 0);
     }
 
     static Task stone(int n) {
         return new CollectTask("kamień",
                 st -> st.is(Blocks.STONE) || st.is(Blocks.DEEPSLATE) || st.is(Blocks.COBBLESTONE),
-                CraftTask.COBBLE, n, Bot.NO_DEPTH);
+                CraftTask.COBBLE, n, Bot.NO_DEPTH, 1);
     }
 
-    static Task ore(String name, net.minecraft.tags.TagKey<Block> tag, Item drop, int n, int depth) {
+    static Task ore(String name, net.minecraft.tags.TagKey<Block> tag, Item drop, int n, int depth, int minTier) {
         Predicate<BlockState> b = st -> st.is(tag);
-        return new CollectTask(name, b, s -> s.is(drop), n, depth);
+        return new CollectTask(name, b, s -> s.is(drop), n, depth, minTier);
     }
 
     /** Zapewnia, że w ekwipunku jest co najmniej n desek (ścina drzewa w razie potrzeby). */
@@ -95,7 +95,7 @@ public final class Planner {
             if (have >= n) return List.of();
             int logsNeeded = (int) Math.ceil((n - have) / 4.0);
             List<Task> l = new ArrayList<>();
-            if (Bot.count(CraftTask.LOG) < logsNeeded) l.add(wood(logsNeeded));
+            if (Bot.count(CraftTask.LOG) < logsNeeded) l.add(wood(logsNeeded + 2));      // +2 zapasu
             l.add(CraftTask.planks(logsNeeded));
             return l;
         });
@@ -135,7 +135,7 @@ public final class Planner {
             if (Bot.count(s -> s.is(Items.FURNACE)) == 0) {
                 l.add(table());
                 l.add(new CollectTask("kamień", st -> st.is(Blocks.STONE) || st.is(Blocks.DEEPSLATE)
-                        || st.is(Blocks.COBBLESTONE), CraftTask.FURNACE_STONE, 8, Bot.NO_DEPTH));
+                        || st.is(Blocks.COBBLESTONE), CraftTask.FURNACE_STONE, 8, Bot.NO_DEPTH, 1));
                 l.add(CraftTask.furnace());
             }
             l.add(new PlaceTask(Items.FURNACE, "piec", pos -> Bot.furnacePos = pos));
@@ -168,11 +168,11 @@ public final class Planner {
             if (sticks) m.add(CraftTask.sticks());
             if (tier == 2) m.add(new CollectTask("kamień",
                     st -> st.is(Blocks.STONE) || st.is(Blocks.DEEPSLATE) || st.is(Blocks.COBBLESTONE),
-                    CraftTask.COBBLE, needMat, Bot.NO_DEPTH));
+                    CraftTask.COBBLE, needMat, Bot.NO_DEPTH, 1));
             if (tier == 3) m.addAll(ingots(needMat));
             if (tier == 4) {
                 m.add(pick(3));
-                m.add(ore("diament", BlockTags.DIAMOND_ORES, Items.DIAMOND, needMat, -58));
+                m.add(ore("diament", BlockTags.DIAMOND_ORES, Items.DIAMOND, needMat, -58, 3));
             }
             m.add(table());      // gdyby bot odszedł daleko od stołu
             m.add(CraftTask.tool(pick, tier));
@@ -189,7 +189,7 @@ public final class Planner {
             int need = n - have;
             List<Task> l = new ArrayList<>();
             l.add(pick(2));
-            l.add(ore("żelazo", BlockTags.IRON_ORES, Items.RAW_IRON, need, 16));
+            l.add(ore("żelazo", BlockTags.IRON_ORES, Items.RAW_IRON, need, 16, 2));
             l.add(lazy("Paliwo", () -> {
                 if (Bot.count(s -> s.is(Items.COAL) || s.is(Items.CHARCOAL)) > 0) return List.of();
                 if (Bot.count(CraftTask.LOG) >= need) return List.of();
