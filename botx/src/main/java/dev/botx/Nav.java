@@ -118,6 +118,19 @@ public final class Nav {
         };
     }
 
+    /** Wejść na wysokość y lub wyżej. */
+    public static Goal up(int y) {
+        return new Goal("up:" + y) {
+            boolean reached(BlockPos f) {
+                return f.getY() >= y;
+            }
+
+            double h(BlockPos f) {
+                return Math.max(0, y - f.getY()) * 3.0;
+            }
+        };
+    }
+
     /** Dojść w okolice punktu (x,z); keepY != MIN_VALUE trzyma wysokość blisko keepY (kopanie tuneli). */
     public static Goal xz(int tx, int tz, int tol, int keepY) {
         return new Goal("xz:" + tx + "," + tz + "," + keepY) {
@@ -286,7 +299,7 @@ public final class Nav {
                 }
             }
             case PILLAR -> {
-                if (hd > 0.35 && p.onGround()) {
+                if (hd > 0.6 && p.onGround()) {
                     walk(mc, aim, hd, false);
                 } else if (!Bot.pillarUp(mc)) {
                     failed = true;
