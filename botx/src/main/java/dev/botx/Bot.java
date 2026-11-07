@@ -11,6 +11,7 @@ import net.minecraft.tags.FluidTags;
 import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.inventory.Slot;
@@ -282,6 +283,15 @@ public final class Bot {
     /** Idzie w stronę celu; gdy tunnel=true przekopuje się przez przeszkody. */
     public static void moveToward(Minecraft mc, Vec3 target, boolean tunnel) {
         LocalPlayer p = mc.player;
+        if (tunnel) {
+            double hd = Math.hypot(target.x - p.getX(), target.z - p.getZ());
+            double dy = target.y - p.getY();
+            if (hd < 2.5 && dy > 1.8 && pillarUp(mc)) return;     // cel nad nami - dobuduj się w górę
+            if (hd < 2.5 && dy < -1.8) {                           // cel pod nami - kop w dół
+                digDown(mc);
+                return;
+            }
+        }
         look(p, target);
         mc.options.keyUp.setDown(true);
         mc.options.keySprint.setDown(true);
@@ -377,15 +387,63 @@ public final class Bot {
         LocalPlayer p = mc.player;
         if (cls.isInstance(p.containerMenu)) return true;
         Vec3 c = Vec3.atCenterOf(pos);
-        if (p.getEyePosition().distanceTo(c) > 3.5) {
-            moveToward(mc, c, false);
+        Vec3 eye = p.getEyePosition();
+        if (eye.distanceTo(c) > 4.0) {
+            moveToward(mc, c, true);          // idzie, kopie przeszkody, buduje w górę / kopie w dół
             return false;
         }
         look(p, c);
+        BlockHitResult h = mc.level.clip(new ClipContext(eye, c, ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, p));
+        boolean hit = h.getType() == HitResult.Type.BLOCK;
+        if (hit && !h.getBlockPos().equals(pos)) {
+            mine(mc, h.getBlockPos());        // ściana/blok między botem a stołem lub piecem - zniszcz go
+            return false;
+        }
         if (useCooldown > 0) return false;
         useCooldown = 15;
-        mc.gameMode.useItemOn(p, InteractionHand.MAIN_HAND, new BlockHitResult(c, Direction.UP, pos, false));
+        BlockHitResult use = hit ? h : new BlockHitResult(c, Direction.UP, pos, false);
+        mc.gameMode.useItemOn(p, InteractionHand.MAIN_HAND, use);
         p.swing(InteractionHand.MAIN_HAND);
         return false;
+    }
+
+    // ---------- budowanie w górę (słupek) ----------
+
+    private static final Item[] BUILD_BLOCKS = {
+            Items.DIRT, Items.NETHERRACK, Items.ANDESITE, Items.DIORITE, Items.GRANITE, Items.TUFF,
+            Items.COBBLED_DEEPSLATE, Items.COBBLESTONE, Items.STONE
+    };
+
+    private static Item buildBlock() {
+        for (Item it : BUILD_BLOCKS) if (count(s -> s.is(it)) > 0) return it;
+        return null;
+    }
+
+    /**
+     * Jeden tick budowania słupka: skacze i stawia blok pod sobą. Jeśli nad głową jest sufit - kopie go.
+     * Zwraca false gdy bot nie ma czym budować.
+     */
+    public static boolean pillarUp(Minecraft mc) {
+        LocalPlayer p = mc.player;
+        Item blk = buildBlock();
+        if (blk == null) return false;
+        BlockPos head2 = p.blockPosition().above(2);
+        if (solid(mc, head2)) {
+            mine(mc, head2);
+            return true;
+        }
+        if (!p.getMainHandItem().is(blk)) {
+            equip(mc, s -> s.is(blk));
+            return true;
+        }
+        p.setXRot(90f);
+        BlockPos under = BlockPos.containing(p.getX(), p.getY() - 0.5, p.getZ());
+        if (!solid(mc, under) && solid(mc, under.below()) && p.getY() > under.getY() + 1.0) {
+            Vec3 hv = new Vec3(under.getX() + 0.5, under.getY(), under.getZ() + 0.5);
+            mc.gameMode.useItemOn(p, InteractionHand.MAIN_HAND, new BlockHitResult(hv, Direction.UP, under.below(), false));
+            p.swing(InteractionHand.MAIN_HAND);
+        }
+        if (p.onGround()) mc.options.keyJump.setDown(true);
+        return true;
     }
 }
