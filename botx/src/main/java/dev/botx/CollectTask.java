@@ -164,12 +164,18 @@ public final class CollectTask implements Task {
         return false;
     }
 
-    /** Nic nie widać: zejdź na właściwą wysokość, a potem chodź/kop w jednym kierunku. */
+    private boolean depthMode() {
+        return prefDepth != Bot.NO_DEPTH && prefDepth != Bot.SURFACE;
+    }
+
+    /** Nic nie widać: zejdź na właściwą wysokość (albo wyjdź na powierzchnię), potem chodź/kop w jednym kierunku. */
     private void explore(Minecraft mc) {
         LocalPlayer p = mc.player;
         if (skipDepth > 0) skipDepth--;
 
-        if (prefDepth != Bot.NO_DEPTH && skipDepth == 0 && p.getBlockY() > prefDepth + 3) {
+        if (prefDepth == Bot.SURFACE && !Bot.goSurface(mc)) return;     // drewno: najpierw w górę
+
+        if (depthMode() && skipDepth == 0 && p.getBlockY() > prefDepth + 3) {
             Nav.goTo(Nav.depth(prefDepth + 2));
             Nav.tick(mc);
             if (Nav.failed) {
@@ -194,7 +200,7 @@ public final class CollectTask implements Task {
             legActive = true;
             Nav.reset();
         }
-        int keepY = prefDepth == Bot.NO_DEPTH ? Integer.MIN_VALUE : prefDepth;
+        int keepY = depthMode() ? prefDepth : Integer.MIN_VALUE;
         Nav.goTo(Nav.xz(legX, legZ, 3, keepY));
         boolean arrived = Nav.tick(mc);
         if (arrived || Nav.failed) {
