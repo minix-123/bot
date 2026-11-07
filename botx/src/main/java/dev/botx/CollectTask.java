@@ -94,9 +94,11 @@ public final class CollectTask implements Task {
             Bot.digDown(mc);
             return false;
         }
-        if (hd < 1.6 && c.y > p.getY() + 3) {      // cel wysoko nad nami - pomiń
-            bad.add(pos);
-            pos = null;
+        if (hd < 1.6 && c.y > p.getY() + 3) {      // cel wysoko nad nami - dobuduj się, a bez bloków pomiń
+            if (!Bot.pillarUp(mc)) {
+                bad.add(pos);
+                pos = null;
+            }
             return false;
         }
         Bot.moveToward(mc, c, true);
