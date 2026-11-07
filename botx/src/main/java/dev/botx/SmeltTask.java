@@ -77,6 +77,7 @@ public final class SmeltTask extends ClickTask {
             }
             case 1 -> {
                 waited++;
+                Bot.activity();
                 if (waited % 10 == 0) {
                     int out = menu.getSlot(2).getItem().getCount();
                     if (out >= n || waited > 240 * n + 200) phase = 2;
