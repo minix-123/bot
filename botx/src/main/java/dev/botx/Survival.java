@@ -32,9 +32,15 @@ public final class Survival {
     private static int junkTimer;
     private static LivingEntity huntTarget;
     private static int chase;
+    private static int seekTicks;
+    private static boolean legActive;
+    private static int legX, legZ;
+    private static final java.util.Random RNG = new java.util.Random();
 
     public static void reset() {
         huntCooldown = 0;
+        seekTicks = 0;
+        legActive = false;
         huntTicks = 0;
         pickupTimer = 0;
         equipTries = 0;
@@ -110,10 +116,12 @@ public final class Survival {
         }
 
         // głód i brak jedzenia - poluj
-        if (food <= 12 && huntCooldown <= 0 && Bot.count(Survival::edible) == 0) {
+        if (food <= 12 && (huntCooldown <= 0 || food <= 6) && Bot.count(Survival::edible) == 0) {
             return hunt(mc);
         }
         huntTarget = null;
+        seekTicks = 0;
+        legActive = false;
         return false;
     }
 
@@ -136,10 +144,7 @@ public final class Survival {
                     huntTarget = e;
                 }
             }
-            if (huntTarget == null) {
-                huntCooldown = 400;          // nic w pobliżu - spróbuj później
-                return false;
-            }
+            if (huntTarget == null) return seekFood(mc);      // nic w pobliżu - wyjdź na powierzchnię i szukaj
             huntTicks = 0;
             Bot.msg("§e[Bot X] Głodny - poluję na jedzenie.");
         }
@@ -162,6 +167,37 @@ public final class Survival {
         }
         Combat.attack(mc, huntTarget);
         Bot.activity();
+        return true;
+    }
+
+    /** Brak zwierząt w zasięgu: wyjdź z kopalni na powierzchnię i chodź po okolicy, aż jakieś zobaczysz. */
+    private static boolean seekFood(Minecraft mc) {
+        LocalPlayer p = mc.player;
+        if (++seekTicks == 1) Bot.msg("§e[Bot X] Głodny i brak jedzenia - szukam zwierząt na powierzchni.");
+        if (seekTicks > 4000) {
+            seekTicks = 0;
+            legActive = false;
+            huntCooldown = 6000;
+            Nav.reset();
+            Bot.msg("§e[Bot X] Nie znalazłem zwierząt - wracam do pracy.");
+            return false;
+        }
+        Bot.activity();
+        if (!Bot.goSurface(mc)) return true;               // wciąż się wspina
+        if (!legActive) {
+            int[][] dirs = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+            int[] d = dirs[RNG.nextInt(4)];
+            legX = p.getBlockX() + d[0] * 30;
+            legZ = p.getBlockZ() + d[1] * 30;
+            legActive = true;
+            Nav.reset();
+        }
+        Nav.goTo(Nav.xz(legX, legZ, 3, Integer.MIN_VALUE));
+        boolean arrived = Nav.tick(mc);
+        if (arrived || Nav.failed) {
+            legActive = false;
+            Nav.reset();
+        }
         return true;
     }
 
