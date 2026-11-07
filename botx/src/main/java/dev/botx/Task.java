@@ -7,4 +7,8 @@ public interface Task {
     boolean tick(Minecraft mc);
 
     String label();
+
+    /** Wywoływane gdy bot długo stoi w miejscu bez postępu - zadanie powinno zmienić podejście. */
+    default void onStuck() {
+    }
 }
