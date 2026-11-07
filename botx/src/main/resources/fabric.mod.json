@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "botx",
+  "version": "0.1.0",
+  "name": "Bot X",
+  "description": "Automatyczny bot: N otwiera menu, bot sam zdobywa przedmioty, zabija gracza itd.",
+  "authors": ["Bot X"],
+  "license": "MIT",
+  "environment": "client",
+  "entrypoints": {
+    "client": ["dev.botx.BotXMod"]
+  },
+  "depends": {
+    "fabricloader": ">=0.17.0",
+    "minecraft": "1.21.10",
+    "java": ">=21",
+    "fabric-api": "*"
+  }
+}
