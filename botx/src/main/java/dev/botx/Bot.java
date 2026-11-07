@@ -19,6 +19,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
@@ -72,6 +73,8 @@ public final class Bot {
         current = null;
         Nav.reset();
         Survival.reset();
+        surfTarget = Integer.MIN_VALUE;
+        surfFailCd = 0;
         stuckEvents = 0;
         idle = 0;
         wiggle = 0;
@@ -484,18 +487,34 @@ public final class Bot {
     }
 
     /**
-     * Jeden tick budowania słupka: skacze i stawia blok pod sobą. Jeśli nad głową jest sufit - kopie go.
+     * Jeden tick budowania słupka. Na ziemi: rozkopuje sufit (2 bloki nad głową), bierze blok do ręki
+     * i skacze. W powietrzu: tylko stawia blok pod nogami (niczego nie kopie - to psuło budowanie).
      * Zwraca false gdy bot nie ma czym budować.
      */
     public static boolean pillarUp(Minecraft mc) {
         LocalPlayer p = mc.player;
         Item blk = buildBlock();
         if (blk == null) return false;
-        BlockPos head2 = p.blockPosition().above(2);
-        if (solid(mc, head2)) {
-            mine(mc, head2);
+
+        if (p.onGround()) {
+            BlockPos f = p.blockPosition();
+            for (int up = 2; up <= 3; up++) {
+                BlockPos c = f.above(up);
+                if (solid(mc, c)) {
+                    if (!mine(mc, c)) stuckTicks += 5;
+                    return true;
+                }
+            }
+            if (!p.getMainHandItem().is(blk)) {
+                equip(mc, s -> s.is(blk));
+                return true;
+            }
+            p.setXRot(90f);
+            mc.options.keyJump.setDown(true);
             return true;
         }
+
+        // w powietrzu
         if (!p.getMainHandItem().is(blk)) {
             equip(mc, s -> s.is(blk));
             return true;
@@ -506,8 +525,53 @@ public final class Bot {
             Vec3 hv = new Vec3(under.getX() + 0.5, under.getY(), under.getZ() + 0.5);
             mc.gameMode.useItemOn(p, InteractionHand.MAIN_HAND, new BlockHitResult(hv, Direction.UP, under.below(), false));
             p.swing(InteractionHand.MAIN_HAND);
+            activity();
         }
-        if (p.onGround()) mc.options.keyJump.setDown(true);
         return true;
+    }
+
+    // ---------- wyjście na powierzchnię ----------
+
+    /** Zamiast głębokości - "szukaj na powierzchni" (drewno). */
+    public static final int SURFACE = Integer.MIN_VALUE + 1;
+
+    private static int surfTarget = Integer.MIN_VALUE;
+    private static int surfFailCd;
+
+    /** Wysokość powierzchni w miejscu gdzie stoi bot. */
+    public static int surfaceY(Minecraft mc) {
+        LocalPlayer p = mc.player;
+        return mc.level.getHeight(Heightmap.Types.WORLD_SURFACE, p.getBlockX(), p.getBlockZ());
+    }
+
+    /**
+     * Wspina się (kopiąc schody w górę) aż bot będzie blisko powierzchni.
+     * Zwraca true gdy bot jest na powierzchni (lub nie da się wyjść - wtedy nie blokuje zadania).
+     */
+    public static boolean goSurface(Minecraft mc) {
+        LocalPlayer p = mc.player;
+        if (surfFailCd > 0) {
+            surfFailCd--;
+            return true;
+        }
+        int sy = surfaceY(mc);
+        if (p.getBlockY() >= sy - 7) {
+            surfTarget = Integer.MIN_VALUE;
+            return true;
+        }
+        if (surfTarget == Integer.MIN_VALUE) surfTarget = sy - 3;      // cel stały w czasie wspinaczki
+        Nav.goTo(Nav.up(surfTarget));
+        if (Nav.tick(mc)) {
+            surfTarget = Integer.MIN_VALUE;
+            Nav.reset();
+            return true;
+        }
+        if (Nav.failed) {
+            Nav.reset();
+            surfTarget = Integer.MIN_VALUE;
+            surfFailCd = 400;
+            return true;
+        }
+        return false;
     }
 }
