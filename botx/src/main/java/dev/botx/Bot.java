@@ -43,6 +43,18 @@ public final class Bot {
     public static BlockPos tablePos;
     public static BlockPos furnacePos;
 
+    // ---------- wykrywanie utknięcia ----------
+    private static boolean activityFlag;
+    private static Vec3 refPos = Vec3.ZERO;
+    private static int idle;
+    private static int stuckEvents;
+    private static int wiggle;
+
+    /** Zadania wołają to gdy coś robią (kopią, klikają, walczą) - bot wtedy nie jest "utknięty". */
+    public static void activity() {
+        activityFlag = true;
+    }
+
     // ---------- start / stop ----------
 
     public static void start(List<Task> tasks, String label) {
@@ -58,6 +70,11 @@ public final class Bot {
         running = false;
         queue.clear();
         current = null;
+        Nav.reset();
+        Survival.reset();
+        stuckEvents = 0;
+        idle = 0;
+        wiggle = 0;
         Minecraft mc = Minecraft.getInstance();
         releaseKeys(mc);
         if (mc.player != null && mc.player.containerMenu != mc.player.inventoryMenu) {
@@ -79,6 +96,7 @@ public final class Bot {
         mc.options.keyRight.setDown(false);
         mc.options.keyJump.setDown(false);
         mc.options.keySprint.setDown(false);
+        mc.options.keyUse.setDown(false);
     }
 
     // ---------- główna pętla (co tick klienta) ----------
@@ -101,10 +119,40 @@ public final class Bot {
         releaseKeys(mc);
         if (useCooldown > 0) useCooldown--;
 
+        // watchdog: brak ruchu i brak aktywności przez ~8 s = utknięcie
+        if (p.position().distanceToSqr(refPos) > 0.36 || activityFlag) {
+            refPos = p.position();
+            idle = 0;
+        } else {
+            idle++;
+        }
+        activityFlag = false;
+        if (idle > 160) {
+            idle = 0;
+            stuckEvents++;
+            Nav.reset();
+            if (current != null) current.onStuck();
+            wiggle = 15;
+            p.setYRot(p.getYRot() + 60 + RNG.nextInt(240));
+            if (stuckEvents > 10) {
+                stop("Utknąłem i nic nie pomaga - zatrzymano.");
+                return;
+            }
+            msg("§e[Bot X] Utknąłem - zmieniam podejście (" + stuckEvents + "/10).");
+        }
+        if (wiggle > 0) {
+            wiggle--;
+            mc.options.keyUp.setDown(true);
+            mc.options.keyJump.setDown(true);
+            return;
+        }
+
+        if (Survival.tick(mc)) return;      // jedzenie, polowanie, oddychanie
         if (Combat.defend(mc)) return;      // potwór tuż obok - najpierw walka
 
         if (current == null) {
             current = queue.poll();
+            Nav.reset();
             if (current == null) {
                 stop("Gotowe! Zadanie wykonane.");
                 return;
@@ -119,8 +167,10 @@ public final class Bot {
             return;
         }
         if (!running) return;
-        if (done) current = null;
-        else if (current != null && --statusTimer <= 0) {
+        if (done) {
+            current = null;
+            stuckEvents = 0;
+        } else if (current != null && --statusTimer <= 0) {
             statusTimer = 10;
             status = current.label();
             p.displayClientMessage(Component.literal("§b[Bot X] " + status), true);
@@ -158,6 +208,7 @@ public final class Bot {
     }
 
     public static void click(Minecraft mc, AbstractContainerMenu menu, int slot, int button, ClickType type) {
+        activity();
         mc.gameMode.handleInventoryMouseClick(menu.containerId, slot, button, type, mc.player);
     }
 
@@ -179,23 +230,28 @@ public final class Bot {
         return true;
     }
 
+    /** Narzędzie nadaje się do użycia (nie jest tuż przed zepsuciem). */
+    public static boolean usable(ItemStack s) {
+        return !s.isDamageableItem() || s.getMaxDamage() - s.getDamageValue() > 4;
+    }
+
     public static int pickTier() {
-        if (count(s -> s.is(Items.DIAMOND_PICKAXE) || s.is(Items.NETHERITE_PICKAXE)) > 0) return 4;
-        if (count(s -> s.is(Items.IRON_PICKAXE)) > 0) return 3;
-        if (count(s -> s.is(Items.STONE_PICKAXE)) > 0) return 2;
-        if (count(s -> s.is(Items.WOODEN_PICKAXE)) > 0) return 1;
+        if (count(s -> (s.is(Items.DIAMOND_PICKAXE) || s.is(Items.NETHERITE_PICKAXE)) && usable(s)) > 0) return 4;
+        if (count(s -> s.is(Items.IRON_PICKAXE) && usable(s)) > 0) return 3;
+        if (count(s -> s.is(Items.STONE_PICKAXE) && usable(s)) > 0) return 2;
+        if (count(s -> s.is(Items.WOODEN_PICKAXE) && usable(s)) > 0) return 1;
         return 0;
     }
 
     public static void equipBestPick(Minecraft mc) {
         int t = pickTier();
         if (t == 0) return;
-        equip(mc, s -> s.is(switch (t) {
+        equip(mc, s -> usable(s) && (s.is(switch (t) {
             case 4 -> Items.DIAMOND_PICKAXE;
             case 3 -> Items.IRON_PICKAXE;
             case 2 -> Items.STONE_PICKAXE;
             default -> Items.WOODEN_PICKAXE;
-        }) || (t == 4 && s.is(Items.NETHERITE_PICKAXE)));
+        }) || (t == 4 && s.is(Items.NETHERITE_PICKAXE))));
     }
 
     // ---------- świat ----------
@@ -266,10 +322,9 @@ public final class Bot {
         BlockPos hp = h.getBlockPos();
         BlockState hs = lv.getBlockState(hp);
         if (hs.getDestroySpeed(lv, hp) < 0) return false;
-        if (lavaNear(lv, hp)) {
-            stop("Lawa przy kopanym bloku - zatrzymano.");
-            return false;
-        }
+        if (lavaNear(lv, hp)) return false;        // nie kop obok lawy
+        if (hs.hasBlockEntity()) return false;     // nie niszcz skrzyń, piecow itp.
+        activity();
         if (hs.is(BlockTags.MINEABLE_WITH_PICKAXE)) equipBestPick(mc);
         mc.gameMode.continueDestroyBlock(hp, h.getDirection());
         p.swing(InteractionHand.MAIN_HAND);
@@ -388,8 +443,13 @@ public final class Bot {
         if (cls.isInstance(p.containerMenu)) return true;
         Vec3 c = Vec3.atCenterOf(pos);
         Vec3 eye = p.getEyePosition();
-        if (eye.distanceTo(c) > 4.0) {
-            moveToward(mc, c, true);          // idzie, kopie przeszkody, buduje w górę / kopie w dół
+        if (eye.distanceTo(c) > 3.8) {
+            Nav.goTo(Nav.reach(c, 3.5));      // A*: idzie, kopie przeszkody, buduje w górę / kopie w dół
+            Nav.tick(mc);
+            if (Nav.failed) {
+                Nav.reset();
+                moveToward(mc, c, true);      // awaryjnie prosty tryb
+            }
             return false;
         }
         look(p, c);
@@ -413,6 +473,10 @@ public final class Bot {
             Items.DIRT, Items.NETHERRACK, Items.ANDESITE, Items.DIORITE, Items.GRANITE, Items.TUFF,
             Items.COBBLED_DEEPSLATE, Items.COBBLESTONE, Items.STONE
     };
+
+    public static boolean buildBlockAvailable() {
+        return buildBlock() != null;
+    }
 
     private static Item buildBlock() {
         for (Item it : BUILD_BLOCKS) if (count(s -> s.is(it)) > 0) return it;
