@@ -32,6 +32,7 @@ public final class Combat {
         Bot.look(p, target.position().add(0, target.getBbHeight() * 0.6, 0));
         if (p.distanceTo(target) > 3.0f) return false;
         equipWeapon(mc);
+        Bot.activity();
         if (p.getAttackStrengthScale(0.5f) >= 1.0f) {
             mc.gameMode.attack(p, target);
             p.swing(InteractionHand.MAIN_HAND);
