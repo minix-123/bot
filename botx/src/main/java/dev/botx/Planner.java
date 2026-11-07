@@ -74,7 +74,7 @@ public final class Planner {
     }
 
     static Task wood(int n) {
-        return new CollectTask("drewno", st -> st.is(BlockTags.LOGS_THAT_BURN), CraftTask.LOG, n, Bot.NO_DEPTH, 0);
+        return new CollectTask("drewno", st -> st.is(BlockTags.LOGS_THAT_BURN), CraftTask.LOG, n, Bot.SURFACE, 0);
     }
 
     static Task stone(int n) {
